@@ -20,6 +20,34 @@ def load_config(path="config.yml"):
     return config
 
 
+def execute_query(centra_api, query=None, query_id=None):
+
+    query_results = None
+    
+    if query_id and not query:
+        query_results = centra.insight_query_results(query_id)
+
+    if query:
+        query_id = centra.insight_query("run", query, agent_filter={"os": ["Windows"]})
+
+        # Make sure the query executed successfully
+        if query_id:
+            query_status = None
+
+            # Wait for the query to finish
+            while query_status != "DONE":
+                query_status = centra.insight_query_info(query_id, status_only=True)
+                if query_status == "DONE":
+                    break
+
+                logging.info(f"Waiting for query {query_id} to finish...current status {query_status}")            
+                time.sleep(10)
+            
+            query_results = centra.insight_query_results(query_id)
+
+    return query_results
+
+
 if __name__ == "__main__":
     # Set the logging format
     logging.basicConfig(
@@ -45,21 +73,13 @@ if __name__ == "__main__":
         logging.error(e)
         exit(1)
 
-    # Initiate the query
-    query_id = centra.insight_query("run", args.query, agent_filter={"os": ["Windows"]})
+    results = None
+    if args.query_id:
+        results = execute_query(centra, query_id=args.query_id)
+    elif args.query:
+        results = execute_query(centra, query=args.query)
+    else:
+        for job in config['jobs']:
+            print(job)
 
-    # Make sure the query executed successfully
-    if query_id:
-        query_status = None
-
-        # Wait for the query to finish
-        while query_status != "DONE":
-            query_status = centra.insight_query_info(query_id, status_only=True)
-            if query_status == "DONE":
-                break
-
-            logging.info(f"Waiting for query {query_id} to finish...current status {query_status}")            
-            time.sleep(10)
-        
-        query_results = centra.insight_query_results(query_id)
-        print(json.dumps(query_results, indent=4))
+    print(results)
