@@ -1,0 +1,36 @@
+guardicore:
+  management_url: "cus-NNNN.cloud.guardicore.com"
+  username: ""
+  password: ""
+
+jobs:
+  sentinelone-status:
+    enabled: true
+    query: "SELECT * FROM services WHERE display_name in ('Sentinel Agent')"
+    timeout: 300
+    output:
+      elasticsearch:
+        enabled: true
+        index: "sentinelone-service-status"
+      csv:
+  stopped-agents:
+    enabled: true
+    query: "SELECT display_name, start_type, status FROM services WHERE name in ('Sentinel Agent','ZSAService','ZSATunnel') AND status in ('STOPPED','STOPPING')"
+    timeout: 300
+    output:
+      csv:
+  zscaler-status:
+    enabled: true
+    query: "SELECT * FROM services WHERE display_name in ('ZSAService','ZSATunnel') AND status in ('STOPPED','STOPPING')"
+    timeout: 300
+    output:
+      csv:
+      stdout:
+
+outputs:
+  elasticsearch:
+     hosts: [""]
+     use_tls: true
+     auth_method: "api"
+     username: ""
+     password: ""
