@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 class CentraAPI(object):
 
-    def __init__(self, management_url=""):
+    def __init__(self, management_url="", http_scheme="https"):
         """
         Initializes an API object that is used
         to make consistent calls to the Guardicore Centra API
@@ -12,6 +12,8 @@ class CentraAPI(object):
 
         self.management_url = management_url
         self.session = requests.Session()
+        self.http_scheme = http_scheme
+        self.base_url = f"{self.http_scheme}://{self.management_url}"
 
         self.session.headers.update({
             'Content-Type': 'application/json'
@@ -28,7 +30,7 @@ class CentraAPI(object):
             "password": password
         }
 
-        response = self.session.post(f"https://{self.management_url}/api/v3.0/authenticate", data=json.dumps(auth_body))
+        response = self.session.post(f"{self.base_url}/api/v3.0/authenticate", data=json.dumps(auth_body))
         if response.status_code == 200:
             data = response.json()
 
@@ -59,7 +61,7 @@ class CentraAPI(object):
                 "ruleset_name": rule_set + " | Outbound",
                 "value": ip
             }
-            self.session.post(f"https://{self.management_url}/api/v3.0/widgets/malicious-reputation-block", data=json.dumps(data))
+            self.session.post(f"{self.base_url}/api/v3.0/widgets/malicious-reputation-block", data=json.dumps(data))
             
         if direction in ["SOURCE", "BOTH"]:
             data = {
@@ -68,7 +70,7 @@ class CentraAPI(object):
                 "ruleset_name": rule_set + " | Inbound",
                 "value": ip
             }
-            self.session.post(f"https://{self.management_url}/api/v3.0/widgets/malicious-reputation-block", data=json.dumps(data))
+            self.session.post(f"{self.base_url}/api/v3.0/widgets/malicious-reputation-block", data=json.dumps(data))
 
 
     def get_incidents(self, tags=[], tag__not=["Acknowledged"], limit=500, from_hours=24):
@@ -82,7 +84,7 @@ class CentraAPI(object):
         from_time = int((datetime.now() - timedelta(hours=from_hours)).timestamp()) * 1000
         to_time = int(datetime.now().timestamp()) * 1000
 
-        url = f"https://{self.management_url}/api/v3.0/incidents?tag={tag_list}&tag__not={tag__not}&from_time={from_time}&to_time={to_time}&limit={limit}"
+        url = f"{self.base_url}/api/v3.0/incidents?tag={tag_list}&tag__not={tag__not}&from_time={from_time}&to_time={to_time}&limit={limit}"
         response = self.session.get(url)
         if response.status_code == 200:
             data = response.json()
@@ -106,7 +108,7 @@ class CentraAPI(object):
                 "negate_args": None,
                 "ids": [id]
             }
-            self.session.post(f"https://{self.management_url}/api/v3.0/incidents/tag", data=json.dumps(data))
+            self.session.post(f"{self.base_url}/api/v3.0/incidents/tag", data=json.dumps(data))
 
     def acknowledge_incident(self, ids=[]):
         """
@@ -122,7 +124,7 @@ class CentraAPI(object):
             "ids": ids,
             "negate_args": None
         }
-        self.session.post(f"https://{self.management_url}/api/v3.0/incidents/acknowledge", data=json.dumps(data))
+        self.session.post(f"{self.base_url}/api/v3.0/incidents/acknowledge", data=json.dumps(data))
 
     def get_inner(self, destination, source):
         """
@@ -143,7 +145,7 @@ class CentraAPI(object):
 
         # Raise an error if trying to use an unsupported action value
         if action not in ["run", "preview_selection", "abort"]:
-            raise ValueError("Unsupported action. Must be: run, preview_selection, or abort")
+            raise ValueError("Invalid action. Must be: run, preview_selection, or abort")
 
         # Build the post payload
         data = {
@@ -152,7 +154,7 @@ class CentraAPI(object):
             "query": query
         }
 
-        response = self.session.post(f"https://{self.management_url}{api_endpoint}", data=json.dumps(data))
+        response = self.session.post(f"{self.base_url}{api_endpoint}", data=json.dumps(data))
         if response.status_code == 200:
             response_data = response.json()
             return response_data['id']
@@ -169,7 +171,7 @@ class CentraAPI(object):
 
         api_endpoint = f"/api/v3.0/agents/query/{query_id}"
 
-        response = self.session.get(f"https://{self.management_url}{api_endpoint}")
+        response = self.session.get(f"{self.base_url}{api_endpoint}")
         if response.status_code == 200:
             response_data = response.json()
 
@@ -194,7 +196,7 @@ class CentraAPI(object):
 
         api_endpoint = f"/api/v3.0/agents/query/{query_id}/results?limit={limit}&offset={offset}"
 
-        response = self.session.get(f"https://{self.management_url}{api_endpoint}")
+        response = self.session.get(f"{self.base_url}{api_endpoint}")
         if response.status_code == 200:
             response_data = response.json()
             results += response_data['objects']
@@ -204,6 +206,30 @@ class CentraAPI(object):
                 results += self.insight_query_results(query_id, page=response_data['current_page'])
 
             return results
+        else:
+            return None
+
+    def insight_label_agents(self, query_id, label_key, label_value, action=""):
+        """
+        Assigns a label to any agent that returned a matching response in the
+        query passed in :query_id:
+        """
+
+        if action not in ["preview_agents_to_label", "add_to_label"]:
+            raise ValueError("Invalid action. Must be: preview_agents_to_label or add_to_label")
+
+        api_endpoint = f"/api/v3.0/agents/query/{query_id}/label"
+
+        label_data = {
+            "action": action,
+            "label_key": label_key,
+            "label_value": label_value
+        }
+
+        response = self.session.post(f"{self.base_url}{api_endpoint}", data=json.dumps(label_data))
+        if response.status_code == 200:
+            response_data = response.json()
+            return response_data
         else:
             return None
         

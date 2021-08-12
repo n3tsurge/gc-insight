@@ -71,7 +71,95 @@ def execute_query(centra_api, query=None, query_id=None):
             
             query_results = centra.insight_query_results(query_id)
 
-    return query_results
+    return query_results, query_id
+
+
+def manual_label_agents(args, query_id, agent_count):
+    """
+    Labels agents based on the result of a Centra Query
+    """
+
+    if args.label_agents:
+        if args.label_key:
+            if args.label_value:
+                
+                if agent_count > 0:
+                    result = centra.insight_label_agents(query_id, args.label_key, args.label_value, action="add_to_label")
+                    if result:
+                        logging.info(f"Labeled {result['added_to_label_count']} agents with the label {args.label_key}: {args.label_value}")
+                else:
+                    logging.info(f"Skipping labeling, query returned 0 agents.")
+            else:
+                logging.error("Must define the --label-value flag to assign labels")
+                exit(1)
+        else:
+            logging.error("Must define the --label-key flag to assign labels")
+        exit(1)
+    return
+
+
+def automatic_label_agents(query_id, agent_count, label_key, label_value):
+    """
+    Labels agents based on the result of a Centra Query
+    """
+    
+    if agent_count > 0:
+        result = centra.insight_label_agents(query_id, label_key, label_value, action='add_to_label')
+        if result:
+            logging.info(
+                f"Labeled {result['added_to_label_count']} agents with the label {label_key}:{label_value}")
+    else:
+        logging.info("Skipping labeling, query returned 0 agents.")
+    return
+
+
+def run_job(job_name, job_config):
+    """
+    Runs the specified job from the config
+    """
+
+    logging.info(f"Running job {job_name}")
+    results, query_id = execute_query(centra, query=job['query'])
+
+    if 'csv' in job['output']:
+        output_csv(job_name, results)
+    
+    if 'stdout' in job['output']:
+        logging.info(f"Displaying results for job {job_name}:")
+        print(json.dumps(results, indent=4))
+
+    # If the job calls to label the agents, perform the labeling
+    if 'label' in job:
+        label_config = job['label']
+        automatic_label_agents(query_id, len(results), label_config['key'], label_config['value'])
+
+    return
+
+
+def output_results(args, results):
+    """
+    Outputs the results based on what parameters were passed to the script
+    """
+
+    if args.csv:
+        # If pulling from a job name output to the CSV 
+        # using the job name as the prefix for the file
+        # if not use the value defined in --csv filename
+        if args.job_name:
+            output_csv(args.job_name, results)
+        else:
+            output_csv(args.csv, results)
+
+    if args.json:
+        logging.info(f"Displaying results:")
+        
+        with open(f"results.json", 'w') as f:
+            f.write(json.dumps(results))
+            f.close()
+
+    if not args.csv and args.json:
+        logging.info(f"Displaying results:")
+        print(json.dumps(results, indent=4))
 
 
 if __name__ == "__main__":
@@ -85,10 +173,13 @@ if __name__ == "__main__":
     parser.add_argument('--query', help="The OS Query you want to run", required=False)
     parser.add_argument('--query-id', help="Fetch the results from a previous query ID", required=False)
     parser.add_argument('--job-name', help="The job name you want to run manually", required=False)
-    parser.add_argument('--csv', help="Output the results to a CSV", required=False)
-    parser.add_argument('--json', help="Output the results to the screen in JSON format", action="store_true", required=False)
+    parser.add_argument('--csv', help="Output the results to a CSV, value is filename before extension", required=False)
+    parser.add_argument('--json', help="Output the results to the screen in JSON format, value is filename before extension ", required=False)
     parser.add_argument('--show-jobs', help="Prints the configured jobs from the config.yml file", action="store_true", required=False)
     parser.add_argument('--gc-timeout', help="How many seconds to wait for an Guardicore Insight query to finish before giving up", required=False)
+    parser.add_argument('--label-agents', help="Tells the tool to label the agents in the result set of the query", action="store_true", required=False)
+    parser.add_argument('--label-key', help="The key for the label", required=False)
+    parser.add_argument('--label-value', help="The value for the label", required=False)
     args = parser.parse_args()
 
     # Load the configuration
@@ -97,9 +188,7 @@ if __name__ == "__main__":
     # Print the jobs available to run based on the configuratio
     # then exit the program
     if args.show_jobs:
-        for job in config['jobs']:
-            job_config = config['jobs'][job]
-            logging.info(f"job_name={job}, query={job_config['query']}, outputs={job_config['output']}, enabled={job_config['enabled']}")
+        print(json.dumps(config['jobs'], indent=4))
         exit()
 
     # Authenticate to Guardicore
@@ -114,22 +203,24 @@ if __name__ == "__main__":
 
     results = None
 
+    # If the user is looking up a past query pull the results using that specific query_id
     if args.query_id:
-        results = execute_query(centra, query_id=args.query_id)
+        results, query_id = execute_query(centra, query_id=args.query_id)
+        manual_label_agents(args, query_id, len(results))
+        output_results(args, results)
 
+    # If the user has defined a customer query, run that query
     elif args.query:
-        results = execute_query(centra, query=args.query)
+        results, query_id = execute_query(centra, query=args.query)
+        manual_label_agents(args, query_id, len(results))
+        output_results(args, results)
 
+    # If the user has defined a specific configured job by name run that job
     elif args.job_name:
         job = [config['jobs'][j] for j in config['jobs'] if j == args.job_name][0]
-        results = execute_query(centra, query=job['query'])
+        run_job(args.job_name, job)
 
-        if 'csv' in job['output']:
-            output_csv(args.job_name, results)
-        
-        if 'stdout' in job['output']:
-            print(json.dumps(results, indent=4))
-
+    # If running the tool without parameters run all jobs based on the config.yml file
     else:
         # Get active jobs
         jobs = config['jobs']
@@ -137,29 +228,7 @@ if __name__ == "__main__":
             job_name = job
             job = jobs[job_name]
             if job['enabled']:
-                logging.info(f"Running job {job_name}.")
-                results = execute_query(centra, query=job['query'])
-
-                if 'csv' in job['output']:
-                    output_csv(job_name, results)
-            
-                if 'stdout' in job['output']:
-                    print(json.dumps(results, indent=4))
+                run_job(job_name, job)
             else:
-                logging.info(f"Skipping {job_name} as it is currently disabled.")
-
-    exit()
-
-    logging.info(f"Writing {len(results)} to CSV file")
-    if args.csv:
-        
-        # If pulling from a job name output to the CSV 
-        # using the job name as the prefix for the file
-        # if not use the value defined in --csv filename
-        if args.job_name:
-            output_csv(args.job_name, results)
-        else:
-            output_csv(args.csv, results)
-
-    if args.json:
-        print(json.dumps(results, indent=4))
+                logging.info(f"Skipping {job_name} as it is currently disabled.")  
+    
