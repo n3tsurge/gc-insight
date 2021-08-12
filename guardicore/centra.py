@@ -200,7 +200,7 @@ class CentraAPI(object):
             results += response_data['objects']
 
             # Page if necessary
-            if page < round(response_data['total_count']/limit):
+            if page <= round(response_data['total_count']/limit):
                 results += self.insight_query_results(query_id, page=response_data['current_page'])
 
             return results
