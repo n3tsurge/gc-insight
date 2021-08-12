@@ -23,6 +23,9 @@ jobs:
     enabled: true
     query: "SELECT * FROM services WHERE display_name in ('ZSAService','ZSATunnel') AND status in ('STOPPED','STOPPING')"
     timeout: 300
+    label:
+      key: Zscaler Agent Status
+      value: Stopped
     output:
       csv:
       stdout:
