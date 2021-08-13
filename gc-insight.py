@@ -5,6 +5,7 @@ import time
 import logging
 import csv
 import datetime
+from getpass import getpass
 from pyaml_env import parse_config
 from argparse import ArgumentParser
 from guardicore.centra import CentraAPI
@@ -157,7 +158,7 @@ def output_results(args, results):
             f.write(json.dumps(results))
             f.close()
 
-    if not args.csv and args.json:
+    if not args.csv and not args.json:
         logging.info(f"Displaying results:")
         print(json.dumps(results, indent=4))
 
@@ -180,10 +181,19 @@ if __name__ == "__main__":
     parser.add_argument('--label-agents', help="Tells the tool to label the agents in the result set of the query", action="store_true", required=False)
     parser.add_argument('--label-key', help="The key for the label", required=False)
     parser.add_argument('--label-value', help="The value for the label", required=False)
+    parser.add_argument('-u', '--user', help="Guardicore username", required=False)
+    parser.add_argument('-p', '--password', help="Prompt for the Guardicore password", required=False, action="store_true")
     args = parser.parse_args()
 
     # Load the configuration
     config = load_config(path=args.config)
+
+    if args.user:
+        config['guardicore']['username'] = args.user
+
+    if args.password:
+        config['guardicore']['password'] = getpass(prompt="Password: ")
+
 
     # Print the jobs available to run based on the configuratio
     # then exit the program
